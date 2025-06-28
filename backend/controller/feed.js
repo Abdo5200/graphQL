@@ -5,8 +5,6 @@ const path = require("path");
 
 const User = require("../models/user");
 
-const io = require("../socket");
-
 const { validationResult } = require("express-validator");
 
 const Post = require("../models/post");

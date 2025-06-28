@@ -2,10 +2,6 @@ const express = require("express");
 
 const bodyParser = require("body-parser");
 
-const feedRoutes = require("./routes/feed");
-
-const authRoutes = require("./routes/auth");
-
 const mongoose = require("mongoose");
 
 const path = require("path");
@@ -13,6 +9,11 @@ const path = require("path");
 const multer = require("multer");
 
 const { v4: uuidv4 } = require("uuid");
+
+const { createHandler } = require("graphql-http/lib/use/express");
+
+const graphqlSchema = require("./graphql/schema");
+const graphqlResolvers = require("./graphql/resolvers");
 
 require("dotenv").config();
 
@@ -55,12 +56,28 @@ app.use((req, res, next) => {
     "GET, POST, PATCH, PUT, DELETE"
   );
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
   next();
 });
 
-app.use("/feed", feedRoutes);
-
-app.use("/auth", authRoutes);
+app.use(
+  "/graphql",
+  createHandler({
+    schema: graphqlSchema,
+    rootValue: graphqlResolvers,
+    formatError(err) {
+      if (!err.originalError) {
+        return err;
+      }
+      const code = err.originalError.code || 500;
+      const data = err.originalError.data;
+      const message = err.message || "An error occured";
+      return { message: message, code: code, data: data };
+    },
+  })
+);
 
 app.use((error, req, res, next) => {
   console.log(error);
@@ -74,16 +91,7 @@ mongoose
   .connect(MONGODB_URI)
   .then((result) => {
     console.log("DB Connected");
-    const server = app.listen(process.env.PORT);
-    const io = require("./socket").init(server, {
-      cors: {
-        origin: "*",
-        methods: ["GET", "POST"],
-      },
-    });
-    io.on("connection", (socket) => {
-      console.log("Client connected");
-    });
+    app.listen(process.env.PORT);
   })
   .catch((err) => {
     console.log(err);
