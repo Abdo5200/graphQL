@@ -72,7 +72,6 @@ module.exports = {
       process.env.API_SECRET,
       { expiresIn: "1h" }
     );
-    console.log(user, token);
     return { userId: user._id.toString(), token: token };
   },
   createPost: async function ({ postData }, req) {
