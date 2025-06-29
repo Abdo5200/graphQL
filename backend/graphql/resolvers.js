@@ -3,6 +3,17 @@ const Post = require("../models/post");
 const validator = require("validator");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+let createError = (message, code) => {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
+};
+let createErrorWithData = (message, code, arrOfErrors) => {
+  const error = new Error(message);
+  error.code = code;
+  error.data = arrOfErrors;
+  throw error;
+};
 module.exports = {
   createUser: async function ({ userInput }, req) {
     let errors = [];
@@ -16,10 +27,7 @@ module.exports = {
       errors.push({ message: "Password is too short" });
     }
     if (errors.length > 0) {
-      const error = new Error("Invalid Input from the resolver");
-      error.data = errors;
-      error.code = 422;
-      throw error;
+      createErrorWithData("Invalid Input from the resolver", 422, errors);
     }
     const existingUser = await User.findOne({ email: userInput.email });
     if (existingUser) {
@@ -47,22 +55,15 @@ module.exports = {
       errors.push({ message: "Password is too short" });
     }
     if (errors.length > 0) {
-      const error = new Error("Invalid Input");
-      error.data = errors;
-      error.code = 422;
-      throw error;
+      createErrorWithData("Invalid Input", 422, errors);
     }
     const user = await User.findOne({ email: email });
     if (!user) {
-      const error = new Error("User is not found");
-      error.code = 401;
-      throw error;
+      createError("User is not found", 401);
     }
     const checkPassword = bcrypt.compare(password, user.password);
     if (!checkPassword) {
-      const error = new Error("Password is invalid");
-      error.code = 422;
-      throw error;
+      createError("Password is invalid", 422);
     }
     const token = jwt.sign(
       { email: email, userId: user._id },
@@ -73,6 +74,9 @@ module.exports = {
     return { userId: user._id.toString(), token: token };
   },
   createPost: async function ({ postData }, req) {
+    if (!req.isAuth) {
+      createError("Not Authenticated", 401);
+    }
     let errors = [];
     if (!validator.isLength(postData.title, { min: 5 })) {
       errors.push({ message: "Title is too short" });
@@ -84,24 +88,44 @@ module.exports = {
       errors.push({ message: "Image url is empty" });
     }
     if (errors.length > 0) {
-      const error = new Error("Invalid input data");
-      error.code = 422;
-      error.data = errors;
-      throw error;
+      createErrorWithData("Invalid input data", 422, errors);
     }
-    // const user = await User.findById(req.userId);
+    const user = await User.findById(req.userId);
+    if (!user) {
+      createError("User not found", 404);
+    }
     const post = new Post({
       title: postData.title,
       content: postData.content,
       imageUrl: postData.imageUrl,
+      creator: user,
     });
-    // user.posts.push(post._id);
+    user.posts.push(post);
     const savedPost = await post.save();
+    await user.save();
     return {
-      ...savedPost._odc,
+      ...savedPost._doc,
       _id: savedPost._id.toString(),
       createdAt: savedPost.createdAt.toISOString(),
       updatedAt: savedPost.updatedAt.toISOString(),
+    };
+  },
+  getPosts: async function (args, req) {
+    if (!req.isAuth) {
+      createError("Not Authenticated", 401);
+    }
+    const numOfPosts = await Post.find().countDocuments();
+    const posts = await Post.find().sort({ createdAt: -1 }).populate("creator");
+    return {
+      posts: posts.map((p) => {
+        return {
+          ...p._doc,
+          _id: p._id.toString(),
+          createdAt: p.createdAt.toISOString(),
+          updatedAt: p.updatedAt.toISOString(),
+        };
+      }),
+      totalPosts: numOfPosts,
     };
   },
 };

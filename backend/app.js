@@ -6,6 +6,8 @@ const mongoose = require("mongoose");
 
 const path = require("path");
 
+const auth = require("./middleware/auth");
+
 const multer = require("multer");
 
 const { v4: uuidv4 } = require("uuid");
@@ -62,11 +64,21 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(
+// app.use(auth);
+
+app.all(
   "/graphql",
+  auth,
   createHandler({
     schema: graphqlSchema,
     rootValue: graphqlResolvers,
+    context: async (req) => {
+      const expressReq = req.raw;
+      return {
+        isAuth: expressReq.isAuth,
+        userId: expressReq.userId,
+      };
+    },
     formatError(err) {
       if (!err.originalError) {
         return err;
