@@ -15,8 +15,8 @@ class SinglePost extends Component {
   componentDidMount() {
     const postId = this.props.match.params.postId;
     const graphqlQuery = {
-      query: `{
-          getPost(postId:"${postId}")
+      query: `query gettingPost($postId:ID!){
+          getPost(postId:$postId)
           {
             title 
             content 
@@ -27,6 +27,9 @@ class SinglePost extends Component {
             imageUrl
           }
       }`,
+      variables: {
+        postId: postId,
+      },
     };
     fetch(`http://localhost:8080/graphql`, {
       method: "POST",
@@ -40,7 +43,6 @@ class SinglePost extends Component {
         return res.json();
       })
       .then((resData) => {
-        console.log(resData.data.getPost.imageUrl.split("/")[1]);
         if (resData.errors && resData.errors[0].code === 401) {
           throw new Error("Not Authenticated");
         } else if (resData.errors && resData.errors[0].code === 404) {

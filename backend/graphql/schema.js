@@ -36,6 +36,7 @@ module.exports = buildSchema(`
         login(email:String! , password:String!):AuthData!
         getPosts(page:Int!):postsData!
         getPost(postId:ID!):Post!
+        getUser:User!
     }
 
     input postInputData {
@@ -47,6 +48,9 @@ module.exports = buildSchema(`
     type RootMutation {
         createUser(userInput :userInputData):User!
         createPost(postData: postInputData):Post!
+        editPost(postId:ID!,postData:postInputData!):Post!
+        deletePost(postId:ID!):Boolean!
+        updateStatus(status:String):User!
     }
 
     schema {

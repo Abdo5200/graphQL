@@ -3,6 +3,7 @@ const Post = require("../models/post");
 const validator = require("validator");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const removeImage = require("../removeImage");
 let createError = (message, code) => {
   const error = new Error(message);
   error.code = code;
@@ -150,5 +151,87 @@ module.exports = {
       createdAt: post.createdAt.toISOString(),
       updatedAt: post.updatedAt.toISOString(),
     };
+  },
+  editPost: async function ({ postId, postData }, req) {
+    if (!req.isAuth) {
+      createError("Not Authenticated", 401);
+    }
+    let errors = [];
+    if (!validator.isLength(postData.title, { min: 5 })) {
+      errors.push({ message: "Title is too short" });
+    }
+    if (!validator.isLength(postData.content, { min: 5 })) {
+      errors.push({ message: "Content is too short" });
+    }
+    if (validator.isEmpty(postData.imageUrl)) {
+      errors.push({ message: "Image url is empty" });
+    }
+    if (errors.length > 0) {
+      createErrorWithData("Invalid input data", 422, errors);
+    }
+    const post = await Post.findById(postId).populate("creator");
+    if (!post) {
+      createError("Post not found", 404);
+    }
+    if (req.userId.toString() !== post.creator._id.toString()) {
+      createError("Not Authorized", 403);
+    }
+    post.title = postData.title;
+    post.content = postData.content;
+    if (postData.imageUrl !== "undefined") {
+      post.imageUrl = postData.imageUrl;
+    }
+    const updatedPost = await post.save();
+    return {
+      ...updatedPost._doc,
+      _id: updatedPost._id.toString(),
+      createdAt: updatedPost.createdAt.toISOString(),
+      updatedAt: updatedPost.updatedAt.toISOString(),
+    };
+  },
+  deletePost: async function ({ postId }, req) {
+    if (!req.isAuth) {
+      createError("Not Authenticated", 401);
+    }
+    const post = await Post.findById(postId);
+    if (!post) {
+      createError("Post not found", 404);
+    }
+    const user = await User.findById(req.userId);
+    if (!user) {
+      createError("User not found", 403);
+    }
+    if (post.creator.toString() !== req.userId.toString()) {
+      createError("Not Authorized", 422);
+    }
+    user.posts = user.posts.filter((p) => {
+      p._id.toString() === post._id.toString();
+    });
+    user.save();
+    removeImage(post.imageUrl);
+    await Post.findByIdAndDelete(postId);
+    return true;
+  },
+  getUser: async function (args, req) {
+    if (!req.isAuth) {
+      createError("Not Authenticated", 401);
+    }
+    const user = await User.findById(req.userId);
+    if (!user) {
+      createError("User not found", 404);
+    }
+    return { ...user._doc, _id: user._id.toString() };
+  },
+  updateStatus: async function ({ status }, req) {
+    if (!req.isAuth) {
+      createError("Not Authenticated", 401);
+    }
+    const user = await User.findById(req.userId);
+    if (!user) {
+      createError("User not found", 404);
+    }
+    user.status = status;
+    const updatedUser = await user.save();
+    return { ...updatedUser._doc, _id: updatedUser._id.toString() };
   },
 };

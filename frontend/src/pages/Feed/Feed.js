@@ -22,18 +22,31 @@ class Feed extends Component {
   };
 
   componentDidMount() {
-    fetch("http://localhost:8080/feed/status", {
-      method: "GET",
-      headers: { Authorization: "Bearer " + this.props.token },
+    const graphqlQuery = {
+      query: `
+        {
+          getUser{status}
+        }
+      `,
+    };
+    fetch("http://localhost:8080/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + this.props.token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(graphqlQuery),
     })
       .then((res) => {
-        if (res.status !== 200) {
-          throw new Error("Failed to fetch user status.");
-        }
         return res.json();
       })
       .then((resData) => {
-        this.setState({ status: resData.status });
+        console.log(resData);
+        if (resData.errors && resData.errors[0].code === 401)
+          throw new Error("Not Authenticated");
+        else if (resData.errors && resData.errors[0].code === 404)
+          throw new Error("User not found");
+        this.setState({ status: resData.data.getUser.status });
       })
       .catch(this.catchError);
 
@@ -55,8 +68,24 @@ class Feed extends Component {
     }
     const graphqlQuery = {
       query: `
-        { getPosts(page:${page}) { posts { _id title content imageUrl creator {name} createdAt } totalPosts } }
+        query fetchPosts($currentPage:Int!) { 
+          getPosts(page:$currentPage) {
+            posts { 
+              _id 
+              title 
+              content 
+              imageUrl 
+              creator {
+                name
+              } 
+                createdAt
+              } totalPosts 
+            } 
+        }
       `,
+      variables: {
+        currentPage: page,
+      },
     };
     fetch(`http://localhost:8080/graphql`, {
       method: "POST",
@@ -70,6 +99,7 @@ class Feed extends Component {
         return res.json();
       })
       .then((resData) => {
+        console.log(resData);
         if (resData.errors && resData.errors[0].code === 401) {
           throw new Error("Not Authenticated");
         } else if (resData.errors) {
@@ -91,23 +121,33 @@ class Feed extends Component {
 
   statusUpdateHandler = (event) => {
     event.preventDefault();
-    fetch("http://localhost:8080/feed/status", {
-      method: "PATCH",
+    const graphqlQuery = {
+      query: `mutation updateUserStatus($status:String!)
+         {
+          updateStatus(status:$status) { status }
+          }
+        
+          `,
+      variables: {
+        status: this.state.status,
+      },
+    };
+    fetch("http://localhost:8080/graphql", {
+      method: "POST",
       headers: {
         Authorization: "Bearer " + this.props.token,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        status: this.state.status,
-      }),
+      body: JSON.stringify(graphqlQuery),
     })
       .then((res) => {
-        if (res.status !== 200 && res.status !== 201) {
-          throw new Error("Can't update status!");
-        }
         return res.json();
       })
       .then((resData) => {
+        if (resData.errors && resData.errors[0].code === 401)
+          throw new Error("Not Authenticated");
+        else if (resData.errors && resData.errors[0].code === 404)
+          throw new Error("User not found");
         console.log(resData);
       })
       .catch(this.catchError);
@@ -150,18 +190,69 @@ class Feed extends Component {
     })
       .then((res) => res.json())
       .then((resData) => {
-        const imageUrl = resData.imagePath;
-        console.log(imageUrl);
+        const imageUrl = resData.imagePath || "undefined";
         let graphqlQuery = {
           query: `
-        mutation {
-          createPost(postData:{title:"${postData.title}" 
-          , content:"${postData.content}" 
-          , imageUrl:"${imageUrl}"}) 
-          { _id title content creator {name} createdAt imageUrl }
-        }
+          mutation createNewPost($title:String!,$content:String!,$imageUrl:String!)
+          {
+            createPost(
+              postData:{
+                title:$title 
+                , content:$content
+                , imageUrl:$imageUrl
+              }
+            )
+            { 
+              _id 
+              title 
+              content 
+              creator {
+                name
+              } 
+              createdAt 
+              imageUrl 
+            }
+          }
       `,
+          variables: {
+            title: postData.title,
+            content: postData.content,
+            imageUrl: imageUrl,
+          },
         };
+        if (this.state.editPost) {
+          graphqlQuery = {
+            query: `
+            mutation updatePost($postId:ID!,$title:String!,$content:String!,$imageUrl:String!)
+            {
+              editPost(
+                postId:$postId,
+                postData:{
+                  title:$title
+                  , content:$content
+                  , imageUrl:$imageUrl
+                }
+              )
+              { 
+                _id
+                title
+                content
+                creator {
+                  name
+                } 
+                createdAt 
+                imageUrl 
+              }
+            } 
+            `,
+            variables: {
+              postId: this.state.editPost._id,
+              title: postData.title,
+              content: postData.content,
+              imageUrl: imageUrl,
+            },
+          };
+        }
         return fetch("http://localhost:8080/graphql", {
           method: "POST",
           body: JSON.stringify(graphqlQuery),
@@ -182,31 +273,40 @@ class Feed extends Component {
         } else if (resData.errors && resData.errors[0].code === 404) {
           throw new Error("User not found");
         }
+        console.log(resData);
+        let resDataFieldName = "createPost";
+        if (this.state.editPost) {
+          resDataFieldName = "editPost";
+        }
         const post = {
-          _id: resData.data.createPost._id,
-          title: resData.data.createPost.title,
-          content: resData.data.createPost.content,
-          creator: resData.data.createPost.creator.name,
-          createdAt: resData.data.createPost.createdAt,
-          imagePath: resData.data.createPost.imageUrl,
+          _id: resData.data[resDataFieldName]._id,
+          title: resData.data[resDataFieldName].title,
+          content: resData.data[resDataFieldName].content,
+          creator: resData.data[resDataFieldName].creator.name,
+          createdAt: resData.data[resDataFieldName].createdAt,
+          imagePath: resData.data[resDataFieldName].imageUrl,
         };
         this.setState((prevState) => {
           let updatedPosts = [...prevState.posts];
+          let updatedTotalPosts = prevState.totalPosts;
           if (prevState.editPost) {
             const postIndex = prevState.posts.findIndex(
               (p) => p._id === prevState.editPost._id
             );
             updatedPosts[postIndex] = post;
           } else {
-            if (updatedPosts.length >= 2) updatedPosts.pop();
+            updatedTotalPosts++;
+            if (updatedPosts.length >= 2) {
+              updatedPosts.pop();
+            }
             updatedPosts.unshift(post);
           }
-          console.log(updatedPosts);
           return {
             posts: updatedPosts,
             isEditing: false,
             editPost: null,
             editLoading: false,
+            totalPosts: updatedTotalPosts,
           };
         });
       })
@@ -227,20 +327,37 @@ class Feed extends Component {
 
   deletePostHandler = (postId) => {
     this.setState({ postsLoading: true });
-    fetch(`http://localhost:8080/feed/post/${postId}`, {
-      method: "DELETE",
+    const graphqlQuery = {
+      query: `
+        mutation deletingPost($postId:ID!) {
+          deletePost(postId:$postId)
+        }
+      `,
+      variables: {
+        postId: postId,
+      },
+    };
+    fetch(`http://localhost:8080/graphql`, {
+      method: "POST",
       headers: {
         Authorization: "Bearer " + this.props.token,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify(graphqlQuery),
     })
       .then((res) => {
-        if (res.status !== 200 && res.status !== 201) {
-          throw new Error("Deleting a post failed!");
-        }
         return res.json();
       })
       .then((resData) => {
         console.log(resData);
+        if (resData.errors && resData.errors[0].code === 401)
+          throw new Error("Not Authenticated");
+        if (resData.errors && resData.errors[0].code === 404)
+          throw new Error("Post Not found");
+        if (resData.errors && resData.errors[0].code === 403)
+          throw new Error("User not found");
+        if (resData.errors && resData.errors[0].code === 422)
+          throw new Error("Not Autherized");
         this.loadPosts();
         // this.setState((prevState) => {
         //   const updatedPosts = prevState.posts.filter((p) => p._id !== postId);

@@ -23,12 +23,7 @@ require("dotenv").config();
 
 const app = express();
 
-const removeImage = (imagePath) => {
-  imagePath = path.join(__dirname, "..", imagePath);
-  fs.unlink(imagePath, (err) => {
-    console.log(err);
-  });
-};
+const removeImage = require("./removeImage");
 
 const fileStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -83,7 +78,7 @@ app.put("/post-image", (req, res, next) => {
     return res.status(200).json({ message: "No file provided" });
   }
   if (req.body.oldPath) {
-    removeImage(oldPath);
+    removeImage(req.body.oldPath);
   }
   return res.status(201).json({
     message: "Image is stored",
