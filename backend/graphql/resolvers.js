@@ -14,6 +14,7 @@ let createErrorWithData = (message, code, arrOfErrors) => {
   error.data = arrOfErrors;
   throw error;
 };
+const POSTS_PER_PAGE = 2;
 module.exports = {
   createUser: async function ({ userInput }, req) {
     let errors = [];
@@ -110,12 +111,19 @@ module.exports = {
       updatedAt: savedPost.updatedAt.toISOString(),
     };
   },
-  getPosts: async function (args, req) {
+  getPosts: async function ({ page }, req) {
     if (!req.isAuth) {
       createError("Not Authenticated", 401);
     }
+    if (!page) {
+      page = 1;
+    }
     const numOfPosts = await Post.find().countDocuments();
-    const posts = await Post.find().sort({ createdAt: -1 }).populate("creator");
+    const posts = await Post.find()
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * POSTS_PER_PAGE)
+      .limit(POSTS_PER_PAGE)
+      .populate("creator");
     return {
       posts: posts.map((p) => {
         return {
@@ -126,6 +134,21 @@ module.exports = {
         };
       }),
       totalPosts: numOfPosts,
+    };
+  },
+  getPost: async function ({ postId }, req) {
+    if (!req.isAuth) {
+      createError("Not Authenticated", 401);
+    }
+    const post = await Post.findById(postId).populate("creator");
+    if (!post) {
+      createError("Post not found", 404);
+    }
+    return {
+      ...post._doc,
+      _id: post._id.toString(),
+      createdAt: post.createdAt.toISOString(),
+      updatedAt: post.updatedAt.toISOString(),
     };
   },
 };
